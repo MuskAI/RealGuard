@@ -1,0 +1,8 @@
+# 忽略 data/verify_results 目录及其所有内容
+data/verify_results/
+
+# 忽略 /raid5/chr/AIGCD/AIDE/results 目录及其所有内容
+results/
+pretrained_ckpts/
+# 忽略所有 .log 文件
+*.log
