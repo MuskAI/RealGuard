@@ -6,3 +6,5 @@ results/
 pretrained_ckpts/
 # 忽略所有 .log 文件
 *.log
+
+__pycache__/
