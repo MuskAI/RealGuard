@@ -1,4 +1,5 @@
 
+import torch
 def accuracy(output, target):
     """
     Computes accuracy for binary classification, returns as Tensor.
@@ -23,11 +24,15 @@ def mil_accuracy(output, target, patch=4):
     3. 按 MIL 的规则：如果一张图中所有 patch 的预测都是 0，则该图预测为 0（real）；否则（即至少有一个 patch 为 1）则该图预测为 1（fake）。
     4. 将图像级别的预测与 target 比较，计算总体准确率（百分比）。
     """
+    # auto compute patch number
+    # patch = target.size(0) 
+    #############################
+    
     batch_size = int(target.size(0) / patch)
     # 1. 将 output 重塑为 (batch_size, patch, 2)
     output_reshaped = output.view(batch_size, patch, 2)
     target_reshaped = target.view(batch_size, patch)
-    target_reshaped = target_reshaped[:,1]
+    target_reshaped = target_reshaped[:,0]
     # 2. 对每个 patch 得到预测类别（0 或 1）
     patch_pred = output_reshaped.argmax(dim=2)  # shape: (batch_size, patch)
     # 3. MIL 聚合：如果所有 patch 均为 0，则 image 预测为 0，否则为 1
@@ -37,3 +42,15 @@ def mil_accuracy(output, target, patch=4):
     correct = (image_pred == target_reshaped).sum()
     acc = correct.float() * 100.0 / batch_size
     return acc
+
+def custom_collate_fn(batch):
+    """
+    输入: List[Tuple[Tensor[4, 3, 256, 256], int]]
+    输出: Tensor[batch_size*4, 3, 256, 256], Tensor[batch_size]
+    """
+    patch_list, target_list = zip(*batch)  # 拆分成两个列表
+
+    patches = torch.cat(patch_list, dim=0)  # 拼接所有patches (N*4, 3, 256, 256)
+    targets = torch.cat(target_list,dim=0)     # 转为tensor (N,)
+
+    return patches, targets

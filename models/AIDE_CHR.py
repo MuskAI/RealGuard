@@ -208,22 +208,10 @@ class AIDE_Model(nn.Module):
 
     def __init__(self, resnet_path, convnext_path):
         super(AIDE_Model, self).__init__()
+
         self.hpf = HPF()
         self.model_min = ResNet(Bottleneck, [3, 4, 6, 3])
         self.model_max = ResNet(Bottleneck, [3, 4, 6, 3])
-               
-        if resnet_path is not None:
-            pretrained_dict = torch.load(resnet_path, map_location='cpu')
-        
-            model_min_dict = self.model_min.state_dict()
-            model_max_dict = self.model_max.state_dict()
-    
-            for k in pretrained_dict.keys():
-                if k in model_min_dict and pretrained_dict[k].size() == model_min_dict[k].size():
-                    model_min_dict[k] = pretrained_dict[k]
-                    model_max_dict[k] = pretrained_dict[k]
-                else:
-                    print(f"Skipping layer {k} because of size mismatch")
 
         self.fc = Mlp(2048 + 256 , 1024, 2)
 
@@ -231,22 +219,65 @@ class AIDE_Model(nn.Module):
         self.openclip_convnext_xxl, _, _ = open_clip.create_model_and_transforms(
             "convnext_xxlarge", pretrained=convnext_path
         )
-        # 这怎么和论文中说的不一样呢？
         self.openclip_convnext_xxl = self.openclip_convnext_xxl.visual.trunk
         self.openclip_convnext_xxl.head.global_pool = nn.Identity()
         self.openclip_convnext_xxl.head.flatten = nn.Identity()
-
         self.openclip_convnext_xxl.eval()
-        
+
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.convnext_proj = nn.Sequential(
             nn.Linear(3072, 256),
-
         )
         for param in self.openclip_convnext_xxl.parameters():
             param.requires_grad = False
 
-    
+        # 加载参数
+        if resnet_path is not None:
+            pretrained_dict = torch.load(resnet_path, map_location='cpu')
+            pretrained_dict = pretrained_dict['model']
+            if convnext_path is not None:
+                # 加载 model_min 和 model_max 的预训练参数（无前缀）
+                model_min_dict = self.model_min.state_dict()
+                model_max_dict = self.model_max.state_dict()
+                for k in pretrained_dict:
+                    if k in model_min_dict and pretrained_dict[k].size() == model_min_dict[k].size():
+                        model_min_dict[k] = pretrained_dict[k]
+                        model_max_dict[k] = pretrained_dict[k]
+                self.model_min.load_state_dict(model_min_dict)
+                self.model_max.load_state_dict(model_max_dict)
+            else:
+                # 加载整个训练好的模型（带前缀）
+                print("⚙️ Loading full model weights from resnet_path")
+
+                def load_module_weights(prefix, module):
+                    module_dict = module.state_dict()
+                    loaded_dict = {
+                        k[len(prefix) + 1:]: v
+                        for k, v in pretrained_dict.items()
+                        if k.startswith(prefix)
+                        and k[len(prefix) + 1:] in module_dict
+                        and v.size() == module_dict[k[len(prefix) + 1:]].size()
+                    }
+                    load_result = module.load_state_dict(loaded_dict, strict=False)
+
+                    print(f"✅ Loaded {len(loaded_dict)} layers into {prefix}")
+                    
+                    if load_result.missing_keys:
+                        print(f"⚠️ {prefix} - Missing keys:")
+                        for key in load_result.missing_keys:
+                            print(f"   - {key}")
+
+                    if load_result.unexpected_keys:
+                        print(f"⚠️ {prefix} - Unexpected keys:")
+                        for key in load_result.unexpected_keys:
+                            print(f"   - {key}")
+
+                load_module_weights("hpf", self.hpf)
+                load_module_weights("model_min", self.model_min)
+                load_module_weights("model_max", self.model_max)
+                load_module_weights("openclip_convnext_xxl", self.openclip_convnext_xxl)
+                load_module_weights("fc", self.fc)
+                load_module_weights("convnext_proj", self.convnext_proj)
 
     def forward(self, x):
 

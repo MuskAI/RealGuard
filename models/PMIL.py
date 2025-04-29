@@ -131,15 +131,37 @@ class PMIL_Model(nn.Module):
     def __init__(self, resnet_path=None):
         super(PMIL_Model, self).__init__()
         self.model = ResNet(Bottleneck, [3, 4, 6, 3], num_classes=2)
+        self.load_resnet_weights(resnet_path=resnet_path)
+        
+        # if resnet_path is not None:
+        #     pretrained_dict = torch.load(resnet_path, map_location='cpu')
+        #     model_dict = self.model.state_dict()
+        #     for k in pretrained_dict:
+        #         if k in model_dict and pretrained_dict[k].size() == model_dict[k].size():
+        #             model_dict[k] = pretrained_dict[k]
+        #     self.model.load_state_dict(model_dict)
+        #     print("Loaded pretrained model from %s" % resnet_path)
+        # if resnet_path is not None:
+        #     print(f"Loading checkpoint from {resnet_path} ...")
+        #     checkpoint = torch.load(resnet_path, map_location='cpu')
 
-        if resnet_path is not None:
-            pretrained_dict = torch.load(resnet_path, map_location='cpu')
-            model_dict = self.model.state_dict()
-            for k in pretrained_dict:
-                if k in model_dict and pretrained_dict[k].size() == model_dict[k].size():
-                    model_dict[k] = pretrained_dict[k]
-            self.model.load_state_dict(model_dict)
+        #     # 取出模型参数部分
+        #     state_dict = checkpoint['model'] if 'model' in checkpoint else checkpoint
 
+        #     # 去掉 'model.' 前缀
+        #     new_state_dict = {}
+        #     for k, v in state_dict.items():
+        #         if k.startswith('model.'):
+        #             new_k = k[len('model.'):]  # 去掉前缀
+        #         else:
+        #             new_k = k
+        #         new_state_dict[new_k] = v
+
+        #     # 加载到当前模型
+        #     msg = self.model.load_state_dict(new_state_dict, strict=False)
+        #     print("✅ Model loaded.")
+        #     print("🔍 Missing keys:", msg.missing_keys)
+        #     print("🔍 Unexpected keys:", msg.unexpected_keys)
     def forward(self, images):
         """
         images: Tensor of shape [B, 3, H, W]
@@ -147,26 +169,51 @@ class PMIL_Model(nn.Module):
             'scores': Tensor [N_patches, 2],
             'positions': List[(top, left)]
         """
-        
-        # delete this in the future
-        # B, C, H, W = images.shape
-        # results = []
-
-        # # 这不是脱裤子放屁吗？ 之后会删掉的
-        # for i in range(B):
-        #     patches, positions = split_into_patches(images[i])  # [N_patches, C, 256, 256], List of (top, left)
-        #     patches = patches.to(images.device)
-        #     scores = self.model(patches)              # [N_patches, 2]
-        #     # results.append({"scores": scores, "positions": positions})
-        #     results.append(scores)
-        
-        # output = torch.cat(results, dim=0)  # 把 list 拼接成一个 tensor
-        
-        
+    
         output = self.model(images)
-        
         return output
+    import torch
 
+    def load_resnet_weights(self, resnet_path):
+        if resnet_path is None:
+            return
+
+        print(f"🔄 Trying to load pretrained weights from {resnet_path} ...")
+
+        pretrained_dict = torch.load(resnet_path, map_location='cpu')
+        model_dict = self.model.state_dict()
+
+        # 第一种方式：只加载尺寸匹配的
+        matched, total = 0, 0
+        for k in pretrained_dict:
+            if k in model_dict:
+                total += 1
+                if pretrained_dict[k].size() == model_dict[k].size():
+                    model_dict[k] = pretrained_dict[k]
+                    matched += 1
+
+        match_ratio = matched / total if total > 0 else 0
+
+        if match_ratio > 0.7:  # 超过70%匹配，使用第一种方式
+            self.model.load_state_dict(model_dict)
+            print(f"✅ Loaded pretrained model with matched ratio {match_ratio:.2%} from {resnet_path}")
+        else:
+            print(f"⚠️ Matched ratio too low ({match_ratio:.2%}), switching to second loading strategy ...")
+
+            # 第二种方式：去掉前缀，并使用 strict=False
+            checkpoint = pretrained_dict
+            if 'model' in checkpoint:
+                checkpoint = checkpoint['model']
+
+            new_state_dict = {}
+            for k, v in checkpoint.items():
+                new_k = k[len('model.'):] if k.startswith('model.') else k
+                new_state_dict[new_k] = v
+
+            msg = self.model.load_state_dict(new_state_dict, strict=False)
+            print("✅ Model loaded with fallback strategy.")
+            print("🔍 Missing keys:", msg.missing_keys)
+            print("🔍 Unexpected keys:", msg.unexpected_keys)
 # -------------------- Entry --------------------
 def PMIL(resnet_path=None):
     return PMIL_Model(resnet_path)

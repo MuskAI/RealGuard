@@ -6,7 +6,6 @@ class PatchAwareCELoss(nn.Module):
     def __init__(self):
         super().__init__()
         self.ce_loss = nn.CrossEntropyLoss(reduction='none')  # we handle reduction manually
-
     def forward(self, outputs, targets):
         """
         outputs: Tensor of shape (B*P, num_classes)
@@ -57,7 +56,7 @@ class PatchAwareCELoss(nn.Module):
         total_loss = loss1.mean() + loss2
         return total_loss
     
-    
+
 class DualLevelCELoss(nn.Module):
     def __init__(self, alpha=0.3):
         super().__init__()
@@ -69,4 +68,15 @@ class DualLevelCELoss(nn.Module):
         loss_main = self.standard_ce(outputs, targets)
         loss_mil = self.patch_ce(outputs, targets)
         total_loss = (1 - self.alpha) * loss_main + self.alpha * loss_mil
-        return total_loss,loss_main,loss_mil
+        return total_loss, loss_main, loss_mil
+    
+class CrossEntropyLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.ce_loss = nn.CrossEntropyLoss(reduction='none')  # we handle reduction manually
+    def forward(self, outputs, targets):
+        """
+        outputs: Tensor of shape (B*P, num_classes)
+        targets: Tensor of shape (B*P,)
+        """
+        return self.ce_loss(outputs, targets).mean(),None,None

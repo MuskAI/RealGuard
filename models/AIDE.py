@@ -230,7 +230,7 @@ class AIDE_Model(nn.Module):
         self.openclip_convnext_xxl, _, _ = open_clip.create_model_and_transforms(
             "convnext_xxlarge", pretrained=convnext_path
         )
-        # 这怎么和论文中说的不一样呢？
+
         self.openclip_convnext_xxl = self.openclip_convnext_xxl.visual.trunk
         self.openclip_convnext_xxl.head.global_pool = nn.Identity()
         self.openclip_convnext_xxl.head.flatten = nn.Identity()
@@ -245,7 +245,20 @@ class AIDE_Model(nn.Module):
         for param in self.openclip_convnext_xxl.parameters():
             param.requires_grad = False
 
-    
+        # 我要在这里修改load的方式，如果只给了resnet_path,convnext_path 为None，则表示要加载训练好的参数而不是预训练参数
+        # Hack
+        # if resnet_path is not None and convnext_path is None:
+        #     pretrained_dict = torch.load(resnet_path, map_location='cpu')
+
+        #     model_min_dict = self.model_min.state_dict()
+        #     model_max_dict = self.model_max.state_dict()
+
+        #     for k in pretrained_dict.keys():
+        #         if k in model_min_dict and pretrained_dict[k].size() == model_min_dict[k].size():
+        #             model_min_dict[k] = pretrained_dict[k]
+        #             model_max_dict[k] = pretrained_dict[k]
+        #         else:
+        #             print(f"Skipping layer {k} because of size mismatch")
 
     def forward(self, x):
 

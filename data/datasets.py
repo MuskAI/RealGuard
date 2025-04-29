@@ -26,6 +26,7 @@ from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 import kornia.augmentation as K
 
+
 Perturbations = K.container.ImageSequential(
     K.RandomGaussianBlur(kernel_size=(3, 3), sigma=(0.1, 3.0), p=0.1),
     K.RandomJPEG(jpeg_quality=(30, 100), p=0.1)
@@ -36,6 +37,25 @@ transform_before = transforms.Compose([
     transforms.Lambda(lambda x: Perturbations(x)[0])
     ]
 )
+
+# added by haoran
+transform_patch_based_train = transforms.Compose([
+    transforms.RandomCrop(256),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Lambda(lambda x: Perturbations(x)[0]),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ]
+)
+transform_patch_based_test = transforms.Compose([
+    transforms.CenterCrop(256),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ]
+)
+
+########################
+
 transform_before_test = transforms.Compose([
     transforms.ToTensor(),
     ]
@@ -63,7 +83,7 @@ class TrainDataset(Dataset):
 
             if '0_real' not in os.listdir(file_path):
                 for folder_name in os.listdir(file_path):
-                
+            
                     assert os.listdir(os.path.join(file_path, folder_name)) == ['0_real', '1_fake']
 
                     for image_path in os.listdir(os.path.join(file_path, folder_name, '0_real')):
@@ -152,7 +172,7 @@ class TestDataset(Dataset):
         if '0_real' not in os.listdir(file_path):
             for folder_name in os.listdir(file_path):
     
-                assert os.listdir(os.path.join(file_path, folder_name)) == ['0_real', '1_fake']
+                assert os.listdir(os.path.join(file_path, folder_name)) == ['0_real', '1_fake'] or os.listdir(os.path.join(file_path, folder_name)) == ['1_fake', '0_real']
                 
                 for image_path in os.listdir(os.path.join(file_path, folder_name, '0_real')):
                     self.data_list.append({"image_path": os.path.join(file_path, folder_name, '0_real', image_path), "label" : 0})

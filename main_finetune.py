@@ -50,9 +50,9 @@ def get_args_parser():
     # Model parameters
     parser.add_argument('--model', default='AIDE', type=str, metavar='MODEL',
                         help='Name of model to train')
-    parser.add_argument('--resnet_path', default=None, type=str, metavar='MODEL',
+    parser.add_argument('--resnet_path', default='/raid5/chr/AIGCD/AIDE/pretrained_ckpts/resnet50-19c8e357.pth', type=str, metavar='MODEL',
                         help='Path of resnet model')
-    parser.add_argument('--convnext_path', default=None, type=str, metavar='MODEL',
+    parser.add_argument('--convnext_path', default='/raid5/chr/AIGCD/download/CLIP-convnext_xxlarge-laion2B-s34B-b82K-augreg-soup/open_clip_pytorch_model.bin', type=str, metavar='MODEL',
                         help='Path of ConvNeXt of model ')
     
     # EMA related parameters
@@ -135,13 +135,13 @@ def get_args_parser():
     parser.add_argument('--model_prefix', default='', type=str)
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='path/dataset', type=str,
+    parser.add_argument('--data_path', default='/raid0/chr/AIGCD/Datasets/CNNSpot_trainingdata/progan_train', type=str,
                         help='dataset path')
     parser.add_argument('--nb_classes', default=2, type=int,
                         help='number of the classification types')
-    parser.add_argument('--output_dir', default='',
+    parser.add_argument('--output_dir', default='/raid5/chr/AIGCD/AIDE/results/AIDE-Original-progan2',
                         help='path where to save, empty for no saving')
-    parser.add_argument('--log_dir', default=None,
+    parser.add_argument('--log_dir', default='/raid5/chr/AIGCD/AIDE/results/AIDE-Original-progan2',
                         help='path where to tensorboard log')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
@@ -149,7 +149,7 @@ def get_args_parser():
     parser.add_argument('--resume', default='',
                         help='resume from checkpoint')
     
-    parser.add_argument('--eval_data_path', default=None, type=str,
+    parser.add_argument('--eval_data_path', default='/raid0/chr/AIGCD/Datasets/CNNSpot_trainingdata/progan_train', type=str,
                         help='dataset path for evaluation')
     parser.add_argument('--imagenet_default_mean_and_std', type=str2bool, default=True)
     parser.add_argument('--data_set', default='IMNET', choices=['CIFAR', 'IMNET', 'image_folder'],

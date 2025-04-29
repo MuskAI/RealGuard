@@ -147,7 +147,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 @torch.no_grad()
 def evaluate(data_loader, model, device, use_amp=False,criterion=None):
-    assert criterion is not None
+    
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
 
@@ -157,29 +157,47 @@ def evaluate(data_loader, model, device, use_amp=False,criterion=None):
     for index, batch in enumerate(metric_logger.log_every(data_loader, 10, header)):
         images = batch[0]
         target = batch[-1]
+        ### Special for MIL EVAL
+        if len(images.shape) == 6:
+            
+            images = images.to(device, non_blocking=True)
+            target = target.to(device, non_blocking=True)
+            B, P, _, C, H, W = images.shape
+            images = images.view(B * P, _,C, H, W)
+            target = target.view(-1)
+        ######################
+        
+        
+        else:
+                
+            images = images.to(device, non_blocking=True)
+            target = target.to(device, non_blocking=True)
+            # Reshape to (B*P, C, H, W) and (B*P,)
+            B, P, C, H, W = images.shape
+            images = images.view(B * P, C, H, W)
+            target = target.view(-1)
 
-        images = images.to(device, non_blocking=True)
-        target = target.to(device, non_blocking=True)
-        # Reshape to (B*P, C, H, W) and (B*P,)
-        B, P, C, H, W = images.shape
-        images = images.view(B * P, C, H, W)
-        target = target.view(-1)
-
-
+        
         # compute output
         if use_amp:
             with torch.cuda.amp.autocast(dytpe=torch.bfloat16):
                 output = model(images)
                 if isinstance(output, dict):
                     output = output['logits']
-                loss,_,_ = criterion(output, target)
+                if criterion is not None:
+                    loss,_,_ = criterion(output, target)
+                else:
+                    loss = torch.tensor(0.)
+                
         else:
             output = model(images) #[bs, num_cls]
             if isinstance(output, dict):
                 output = output['logits']
-            
-            loss,_,_  = criterion(output, target)
-        
+            if criterion is not None:
+                loss,_,_ = criterion(output, target)
+            else:
+                loss = torch.tensor(0.)
+    
         if index == 0:
             predictions = output
             labels = target
@@ -193,6 +211,7 @@ def evaluate(data_loader, model, device, use_amp=False,criterion=None):
         #######################################
         acc1 = accuracy(output, target) # 非常confusing,这里top5的acc有意义吗？
         batch_size = images.shape[0]
+        
         metric_logger.update(loss=loss.item())
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
         metric_logger.meters['mil_acc'].update(mil_acc.item(), n=batch_size)
@@ -207,21 +226,29 @@ def evaluate(data_loader, model, device, use_amp=False,criterion=None):
         dist.all_gather(output_ddp, predictions)
         labels_ddp = [torch.zeros_like(labels) for _ in range(utils.get_world_size())]
         dist.all_gather(labels_ddp, labels)
-    else:
+        output_all = torch.concat(output_ddp, dim=0)
+        labels_all = torch.concat(labels_ddp, dim=0)
+
+    else: 
         # fallback for single GPU
-        output_ddp = [torch.zeros_like(predictions) for _ in range(utils.get_world_size())]
-        labels_ddp = [torch.zeros_like(labels) for _ in range(utils.get_world_size())]
-    
-    output_all = torch.concat(output_ddp, dim=0)
-    labels_all = torch.concat(labels_ddp, dim=0)
+        # 这里出错了，不能这样搞
+        output_all = predictions
+        labels_all = labels
 
-
+    # 平均的acc计算有问
     y_pred = softmax(output_all.detach().cpu().numpy(), axis=1)[:, 1]
     y_true = labels_all.detach().cpu().numpy()
     y_true = y_true.astype(int)
     
-  
+
     acc = accuracy_score(y_true, y_pred > 0.5)
     ap = average_precision_score(y_true, y_pred) # 这个为什么是0
-    
+    # real acc: label = 0
+    real_mask = y_true == 0
+    real_acc = accuracy_score(y_true[real_mask], (y_pred[real_mask] > 0.5)) if np.any(real_mask) else 0.0
+
+    # fake acc: label = 1
+    fake_mask = y_true == 1
+    fake_acc = accuracy_score(y_true[fake_mask], (y_pred[fake_mask] > 0.5)) if np.any(fake_mask) else 0.0
+    print("real acc: {}, fake acc: {}" .format(real_acc, fake_acc))
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}, acc, ap

@@ -28,6 +28,7 @@ import kornia.augmentation as K
 
 # added by haoran
 from tqdm import tqdm
+from .patch_splitter import PatchifyImage
 #################
 
 Perturbations = K.container.ImageSequential(
@@ -64,6 +65,56 @@ transform_mil_test = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ]
 )
+
+# added by haoran
+transform_patch_based_train = transforms.Compose([
+    transforms.RandomCrop(256),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Lambda(lambda x: Perturbations(x)[0]),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ]
+)
+transform_patch_based_test = transforms.Compose([
+    transforms.CenterCrop(256),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ]
+)
+
+########################
+
+####### anyres #########
+
+def anyres_rz(img):
+    """
+    anyres模块
+    1.如果输入图片的分辨率H,W都小于256 则不分patch，直接处理
+    2.如果输入图片的分辨率H,W有一个小于256 则保持分辨率进行reszie
+    3.如果输入图片的分辨率H,W都大于256 则进行筛分patch
+    Args:
+        img (PIL Image): Image to be scaled.
+    Returns:
+        PIL Image: Rescaled image.
+    """
+    w, h = img.size
+    if w < 256 and h < 256:
+        return img
+    if w < 256 or h < 256:
+        scale = 256 / min(w, h)
+        new_w = int(round(w * scale))
+        new_h = int(round(h * scale))
+        return img.resize((new_w, new_h), Image.BICUBIC)
+    else:
+        return img
+
+transform_mil_anyres_test = transforms.Compose([
+    transforms.Lambda(anyres_rz),  # 自适应尺寸处理
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) # HACK 
+    ]
+)
+#######################
 
 # from xiaohongshu KDD2025
 class RandomMask(object):
@@ -123,6 +174,43 @@ def resize_or_crop(img):
     else:
         return transforms.Resize((512, 512))(img)
 
+# def resize_or_crop(img, 
+#                    resize_to=(256, 256), 
+#                    scale_range=(0.5, 1.5), 
+#                    scale_prob=0.5, 
+#                    upsample_methods=None):
+#     """
+#     根据图像大小决定是否resize或缩放图像。
+
+#     参数：
+#     - img: 输入图像（PIL Image）
+#     - resize_to: 小图像resize的目标大小
+#     - scale_range: 大图像缩放的比例范围（min, max），默认是[0.5, 1.5]
+#     - scale_prob: 大图像执行缩放的概率
+#     - upsample_methods: 用于上采样的小图的插值方法列表
+#     """
+#     w, h = img.size
+#     if w < 256 and h < 256:
+#         # 对小图进行上采样
+#         if upsample_methods is None:
+#             upsample_methods = [Image.BILINEAR, Image.BICUBIC, Image.LANCZOS, Image.NEAREST]
+#         method = random.choice(upsample_methods)
+#         return img.resize(resize_to, method)
+
+#     elif w > 256 and h > 256:
+#         # 对大图，有概率进行缩放
+#         if random.random() < scale_prob:
+#             scale_factor = random.uniform(*scale_range)
+#             new_w = int(w * scale_factor)
+#             new_h = int(h * scale_factor)
+#             upsample_methods = [Image.BILINEAR, Image.BICUBIC, Image.LANCZOS, Image.NEAREST]
+#             method = random.choice(upsample_methods)
+#             return img.resize((new_w, new_h), method)
+#         else:
+#             return img  # 保持原始分辨率不变
+#     else:
+#         # 一边小一边大时，统一resize到指定大小
+#         return img.resize(resize_to, Image.BILINEAR)
 transform_mil_train_plus = transforms.Compose([
     transforms.Lambda(resize_or_crop),  # 自适应尺寸处理
     transforms.RandomHorizontalFlip(p=0.5),
@@ -169,7 +257,7 @@ def loadpathslist_genimage(root, flag, data_split="train",select_data_list=None)
                     if os.path.isdir(subfolder_path):  # 确保是文件夹
                         target_folder_path = os.path.join(subfolder_path, data_split,
                                                           flag)  # 使用 data_split 选择 train 或 val
-                        print(f"Entering folder: {subfolder_path}")
+                        print(f"Entering folder: {target_folder_path}")
                         if os.path.exists(target_folder_path):
                             images = os.listdir(target_folder_path)
                             images_paths = [os.path.join(target_folder_path, image) for image in images if
@@ -219,8 +307,8 @@ class TrainDataset(Dataset):
         # root = args.data_path if is_train else args.eval_data_path
         root = args.data_path
         self.data_list = []
-        # self.select_data_list = ['stable_diffusion_v_1_4','stable_diffusion_v_1_5']
-        self.select_data_list = None
+        self.select_data_list = ['stable_diffusion_v_1_4']
+        # self.select_data_list = None
         # if'GenImage' in root and root.split('/')[-1] != 'train':
         #     file_path = root
 
@@ -298,6 +386,7 @@ class TrainDataset(Dataset):
             return self.__getitem__(random.randint(0, len(self.data_list) - 1))
         
         image = transform_mil_train_plus(image)
+        # image = transform_patch_based_train(image)
         patch_size = self.patch_size
 
         try:
@@ -320,16 +409,23 @@ class TrainDataset(Dataset):
         
 
 class TestDataset(Dataset):
-    def __init__(self, is_train, args):
+    def __init__(self, is_train, args,select_data_list=None, isAnyRes=False):
         self.patch_size = 256
+        ########## Patch Splitter ##############
+        self.patchify = PatchifyImage(patch_size=self.patch_size)
+        ########################################
+        self.isAnyRes = isAnyRes
         root = args.data_path if is_train else args.eval_data_path
-    
+        
+        
+        # self.select_data_list = ['stable_diffusion_v_1_4']
+        self.select_data_list = select_data_list
         self.data_list = []
-        # self.select_data_list = ['stable_diffusion_v_1_4','stable_diffusion_v_1_5']
-        self.select_data_list = None
         if 'GenImage' in root:
             # Use GenImage dataset
             self.root = root
+            # real_img_list = loadpathslist_genimage(self.root, 'nature',
+            #                                        data_split="train",select_data_list=self.select_data_list)
             real_img_list = loadpathslist_genimage(self.root, 'nature',
                                                    data_split="train" if is_train else "val",select_data_list=self.select_data_list)
             real_label_list = [0 for _ in range(len(real_img_list))]
@@ -337,6 +433,8 @@ class TestDataset(Dataset):
                 self.data_list.append({"image_path": img_path, "label": label})
             fake_img_list = loadpathslist_genimage(self.root, 'ai',
                                                    data_split="train" if is_train else "val",select_data_list=self.select_data_list)
+            # fake_img_list = loadpathslist_genimage(self.root, 'ai',
+            #                                        data_split="train",select_data_list=self.select_data_list)
             fake_label_list = [1 for _ in range(len(fake_img_list))]
             for img_path, label in zip(fake_img_list, fake_label_list):
                 self.data_list.append({"image_path": img_path, "label": label})
@@ -371,17 +469,22 @@ class TestDataset(Dataset):
             print(f'image error: {image_path}')
             return self.__getitem__(random.randint(0, len(self.data_list) - 1))
 
-        image = transform_mil_test(image)   
+        if self.isAnyRes: # 测评的时候不resize,保留原有的分辨率
+            image = transform_mil_anyres_test(image)
+        else:
+            image = transform_mil_test(image)   
         patch_size = self.patch_size
 
         try:
             # split image to patches
             C, H, W = image.shape
-            patches = image.unfold(1, patch_size, patch_size).unfold(2, patch_size, patch_size)
-            # (C, 2, 2, 256, 256)
-
-            # Rearrange to (num_patches, C, patch_size, patch_size)
-            patches = patches.permute(1, 2, 0, 3, 4).contiguous().view(-1, C, patch_size, patch_size)
+            if not self.isAnyRes:
+                patches = image.unfold(1, patch_size, patch_size).unfold(2, patch_size, patch_size) # (C, 2, 2, 256, 256)
+                # Rearrange to (num_patches, C, patch_size, patch_size)
+                patches = patches.permute(1, 2, 0, 3, 4).contiguous().view(-1, C, patch_size, patch_size)
+            else:
+                patches, _coords, _pad, _stride = self.patchify(image) 
+                
         except:
             print(f'image error: {image_path}, c, h, w: {image.shape}')
             return self.__getitem__(random.randint(0, len(self.data_list) - 1))

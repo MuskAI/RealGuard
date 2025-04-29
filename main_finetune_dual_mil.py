@@ -148,7 +148,7 @@ def get_args_parser():
                         help='dataset path')
     parser.add_argument('--nb_classes', default=2, type=int,
                         help='number of the classification types')
-    parser.add_argument('--output_dir', default='/raid5/chr/AIGCD/AIDE/results/MIL-V2-Dual',
+    parser.add_argument('--output_dir', default='/raid5/chr/AIGCD/AIDE/results/MIL-V2-Dual-dv1_4',
                         help='path where to save, empty for no saving')
     parser.add_argument('--log_dir', default=None,
                         help='path where to tensorboard log')
@@ -176,7 +176,7 @@ def get_args_parser():
                         help='Enabling distributed evaluation')
     parser.add_argument('--disable_eval', type=str2bool, default=False,
                         help='Disabling evaluation during training')
-    parser.add_argument('--num_workers', default=12, type=int)
+    parser.add_argument('--num_workers', default=8, type=int)
     parser.add_argument('--pin_mem', type=str2bool, default=False, # modified by haoran
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
 
@@ -198,6 +198,7 @@ def get_args_parser():
     
     # added by haoran
     parser.add_argument('--mil_mode', default=True, type=bool, help='whether to use mil model')
+    parser.add_argument('--is_anyres', action='store_true', default=False, help='whether to use anyres model')
     return parser
 
 def main(args):
@@ -217,7 +218,7 @@ def main(args):
         args.dist_eval = False
         dataset_val = None
     else:
-        dataset_val = TestDataset(is_train=False, args=args)
+        dataset_val = TestDataset(is_train=False, args=args, isAnyRes=args.is_anyres)
 
     num_tasks = utils.get_world_size()
     global_rank = utils.get_rank()
@@ -351,7 +352,7 @@ def main(args):
         for v_id, val in enumerate(vals):
             
             args.eval_data_path = os.path.join(args.eval_data_path, val)
-            dataset_val = TestDataset(is_train=False, args=args)
+            dataset_val = TestDataset(is_train=False, args=args, isAnyRes=args.is_anyres)
             args.eval_data_path = eval_data_path
 
             if args.dist_eval:

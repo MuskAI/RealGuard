@@ -1,9 +1,9 @@
 
-GPU_NUM=4
+GPU_NUM=3
 WORLD_SIZE=1
 RANK=0
 MASTER_ADDR=localhost
-MASTER_PORT=29512
+MASTER_PORT=29513
 
 
 DISTRIBUTED_ARGS="
@@ -16,9 +16,9 @@ DISTRIBUTED_ARGS="
 
 PY_ARGS=${@:1}  # Any other arguments 
 
-python -m torch.distributed.launch $DISTRIBUTED_ARGS main_finetune.py \
-    --model AIDE \
-    --batch_size 32 \
+python -m torch.distributed.launch $DISTRIBUTED_ARGS main_finetune_all.py \
+    --model PMIL \
+    --batch_size 64 \
     --blr 1e-4 \
-    --epochs 20 \
+    --epochs 100 \
     ${PY_ARGS}
